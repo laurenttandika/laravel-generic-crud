@@ -23,7 +23,7 @@ class CrudServiceProvider extends ServiceProvider
             __DIR__.'/../stubs' => base_path('stubs/crud'),
         ], 'crud-stubs');
 
-        Route::macro('crud', CrudRouteMacro::register(...));
+        Route::macro('crud', CrudRouteMacro::register());
 
         if ($this->app->runningInConsole()) {
             $this->commands([

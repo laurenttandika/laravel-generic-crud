@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('content')
 <div class="container">
-  <h1>Show {{name}}</h1>
-  {{-- Details here --}}
+  <h1>{{name}} Show</h1>
+  {-- TODO: implement show view --}
 </div>
 @endsection

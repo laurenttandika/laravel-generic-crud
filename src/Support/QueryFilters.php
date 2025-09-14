@@ -13,22 +13,15 @@ class QueryFilters
     public function apply(array $filters): Builder
     {
         foreach ($filters as $field => $ops) {
-            if (! $this->isAllowed($field)) continue;
+            if (! in_array($field, $this->filterable)) continue;
 
             if (is_array($ops)) {
-                foreach ($ops as $op => $value) {
-                    $this->applyOp($field, $op, $value);
-                }
+                foreach ($ops as $op => $value) $this->applyOp($field, $op, $value);
             } else {
                 $this->applyOp($field, 'eq', $ops);
             }
         }
         return $this->builder;
-    }
-
-    protected function isAllowed(string $field): bool
-    {
-        return in_array($field, $this->filterable);
     }
 
     protected function applyOp(string $field, string $op, $value): void
@@ -53,9 +46,6 @@ class QueryFilters
             case 'is':
                 if ($value === 'null') $this->builder->whereNull($field);
                 if ($value === 'not_null') $this->builder->whereNotNull($field);
-                break;
-            default:
-                // ignore unknown ops
                 break;
         }
     }

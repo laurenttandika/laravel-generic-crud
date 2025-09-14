@@ -3,7 +3,6 @@
 return [
     'auth_middleware' => ['auth:sanctum'],
 
-    // CSV export settings
     'csv' => [
         'delimiter' => ',',
         'enclosure' => '"',
@@ -11,7 +10,6 @@ return [
         'chunk'     => 1000,
     ],
 
-    // Audit
     'audit' => [
         'enabled' => true,
         'user_resolver' => fn () => auth()->id(),

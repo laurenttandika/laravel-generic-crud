@@ -2,7 +2,6 @@
 @section('content')
 <div class="container">
   <h1>{{name}} Index</h1>
-  <a href="{{ route('{{table}}.create') }}" class="btn btn-primary mb-3">Create</a>
-  {{-- Table here --}}
+  {-- TODO: implement index view --}
 </div>
 @endsection

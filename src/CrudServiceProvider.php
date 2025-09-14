@@ -15,7 +15,6 @@ class CrudServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // Publish config & stubs
         $this->publishes([
             __DIR__.'/../config/crud.php' => config_path('crud.php'),
         ], 'crud-config');
@@ -24,7 +23,6 @@ class CrudServiceProvider extends ServiceProvider
             __DIR__.'/../stubs' => base_path('stubs/crud'),
         ], 'crud-stubs');
 
-        // Route macro
         Route::macro('crud', CrudRouteMacro::register(...));
 
         if ($this->app->runningInConsole()) {

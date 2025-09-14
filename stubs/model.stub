@@ -12,4 +12,7 @@ class {{name}} extends Model
 
     protected $table = '{{table}}';
     protected $guarded = [];
+
+    // Relations
+{{relations_methods}}
 }

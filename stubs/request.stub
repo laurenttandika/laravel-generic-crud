@@ -13,6 +13,7 @@ class {{name}}Request extends FormRequest
         // You can branch on $this->input('__action') === 'store'|'update' for unique rules etc.
         return [
             {{rules}}
+            {{relation_rules}}
         ];
     }
 }

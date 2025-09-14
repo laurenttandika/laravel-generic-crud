@@ -1,7 +1,7 @@
 @extends('layouts.app')
 @section('content')
 <div class="container">
-  <h1>Create {{name}}</h1>
-  {{-- Form here --}}
+  <h1>{{name}} Create</h1>
+  {-- TODO: implement create view --}
 </div>
 @endsection

@@ -17,7 +17,9 @@ class MakeCrudCommand extends Command
         {--policy : Generate policy}
         {--softdeletes : Add soft deletes}';
 
-    protected $description = 'Generate CRUD files quickly (Model, Migration, Controller, FormRequest, Policy, Resource, Factory, Seeder, Views, Tests)';
+    protected $description = 'Generate CRUD files (Model, Migration, Controller, Request, Policy, Resource, Factory, Seeder, Views, Tests). Supports relations via schema JSON.';
+
+    protected array $relations = [];
 
     public function handle(): int
     {
@@ -27,11 +29,15 @@ class MakeCrudCommand extends Command
 
         $schema = $this->option('schema') ? json_decode(file_get_contents($this->option('schema')), true) : null;
         $fields = $schema['fields'] ?? $this->parseFields($this->option('fields'));
+        $this->relations = $schema['relations'] ?? [];
+        $searchable = $schema['searchable'] ?? [];
+        if (($schema['softDeletes'] ?? false) && ! $this->option('softdeletes')) {
+            $_SERVER['argv'][] = '--softdeletes'; // heuristic assist
+        }
 
-        // Generate using stubs
         $this->generateMigration($table, $fields);
         $this->generateModel($name, $table);
-        $this->generateController($name);
+        $this->generateController($name, $searchable);
         $this->generateRequest($name, $fields);
         $this->generateResource($name);
         $this->generateFactory($name);
@@ -39,8 +45,7 @@ class MakeCrudCommand extends Command
         if ($this->option('policy')) $this->generatePolicy($name);
         if ($this->option('views')) $this->generateViews($name, $table);
 
-        $this->appendRoutes($name, $table);
-
+        $this->appendRoutes($name);
         $this->info('CRUD generated for '.$name);
         return self::SUCCESS;
     }
@@ -55,9 +60,7 @@ class MakeCrudCommand extends Command
     protected function render(string $stub, array $vars): string
     {
         $content = file_get_contents($this->stubPath($stub));
-        foreach ($vars as $k=>$v) {
-            $content = str_replace('{{'.$k.'}}', $v, $content);
-        }
+        foreach ($vars as $k=>$v) $content = str_replace('{{'.$k.'}}', $v, $content);
         return $content;
     }
 
@@ -73,17 +76,43 @@ class MakeCrudCommand extends Command
         return $out;
     }
 
+    protected function snakePluralFromClass(string $fqcn): string
+    {
+        $class = Str::afterLast($fqcn, '\\');
+        return Str::plural(Str::snake($class));
+    }
+
     protected function migrationColumns(array $fields): string
     {
         $lines = [];
+        $existing = [];
+
         foreach ($fields as $f) {
             $name = $f['name']; $type = $f['type']; $extra = $f['extra'] ?? '';
+            $existing[] = $name;
             $col = "\$table->{$type}('{$name}')";
             if (str_contains($extra, 'null')) $col .= "->nullable()";
             if (str_contains($extra, 'unique')) $col .= "->unique()";
             $lines[] = $col.';';
         }
-        if ($this->option('softdeletes')) $lines[] = "\$table->softDeletes();";
+
+        foreach ($this->relations as $rel) {
+            if (($rel['type'] ?? '') !== 'belongsTo') continue;
+            $field = $rel['field'] ?? null;
+            if (! $field) continue;
+            $table = $rel['table'] ?? ($rel['target'] ? $this->snakePluralFromClass($rel['target']) : null);
+            if (!in_array($field, $existing)) {
+                $line = "\$table->foreignId('{$field}')->constrained('{$table}')";
+                $onDelete = $rel['onDelete'] ?? null;
+                if ($onDelete === 'cascade') $line .= "->cascadeOnDelete()";
+                elseif ($onDelete === 'null') $line .= "->nullOnDelete()";
+                $lines[] = $line.';';
+            } else {
+                $lines[] = "\$table->foreign('{$field}')->references('id')->on('{$table}');";
+            }
+        }
+
+        if ($this->option('softdeletes')) $lines.append("\$table->softDeletes();");
         return implode("\n            ", $lines);
     }
 
@@ -103,6 +132,64 @@ class MakeCrudCommand extends Command
         return implode(",\n            ", $rules);
     }
 
+    protected function relationRules(): string
+    {
+        $lines = [];
+        foreach ($this->relations as $rel) {
+            if (($rel['type'] ?? '') !== 'belongsTo') continue;
+            $field = $rel['field'] ?? null;
+            $table = $rel['table'] ?? ($rel['target'] ? $this->snakePluralFromClass($rel['target']) : null);
+            if ($field && $table) $lines[] = "'{$field}' => 'exists:{$table},id'";
+        }
+        return implode(",\n            ", $lines);
+    }
+
+    protected function relationMethods(string $name): string
+    {
+        $out = [];
+        foreach ($this->relations as $rel) {
+            $type = $rel['type'] ?? '';
+            $target = $rel['target'] ?? null;
+            $method = $rel['name'] ?? null;
+            if (! $type || ! $target || ! $method) continue;
+
+            if ($type === 'belongsTo') {
+                $fk = $rel['field'] ?? Str::snake(class_basename($target)).'_id';
+                $out[] = "public function {$method}(){ return \$this->belongsTo(\\{$target}::class, '{$fk}'); }";
+            } elseif ($type === 'hasMany') {
+                $fk = $rel['foreign_key'] ?? (Str::snake($name).'_id');
+                $out[] = "public function {$method}(){ return \$this->hasMany(\\{$target}::class, '{$fk}'); }";
+            }
+        }
+        return empty($out) ? "    // none" : '    '.implode("\n    ", $out);
+    }
+
+    protected function relationIncludes(): string
+    {
+        $lines = [];
+        foreach ($this->relations as $rel) {
+            $type = $rel['type'] ?? '';
+            $method = $rel['name'] ?? null;
+            $target = $rel['target'] ?? null;
+            if (!$method) continue;
+
+            if ($type === 'belongsTo') {
+                $fk = $rel['field'] ?? ($target ? Str::snake(class_basename($target)).'_id' : null);
+                if ($fk) $lines[] = "'{$fk}' => \$this->{$fk},";
+                if ($target) {
+                    $res = Str::afterLast($target, '\\').'Resource';
+                    $lines[] = "// '{$method}' => \\App\\Http\\Resources\\{$res}::make(\$this->whenLoaded('{$method}')),";
+                }
+            } elseif ($type === 'hasMany') {
+                if ($target) {
+                    $res = Str::afterLast($target, '\\').'Resource';
+                    $lines[] = "// '{$method}' => \\App\\Http\\Resources\\{$res}::collection(\$this->whenLoaded('{$method}')),";
+                }
+            }
+        }
+        return !empty($lines) ? "\n            " . implode("\n            ", $lines) : "";
+    }
+
     protected function generateMigration(string $table, array $fields): void
     {
         $ts = date('Y_m_d_His');
@@ -119,17 +206,18 @@ class MakeCrudCommand extends Command
     {
         $traits = [];
         if ($this->option('tenant')) $traits[] = "use \\Qnox\\Crud\\Traits\\HasTenantScope; protected string \$tenant_column = 'tenant_id';";
-        if ($this->option('softdeletes')) $traits.append("use \\Illuminate\\Database\\Eloquent\\SoftDeletes;");
+        if ($this->option('softdeletes')) $traits[] = "use \\Illuminate\\Database\\Eloquent\\SoftDeletes;";
         $content = $this->render('model.stub', [
             'name' => $name,
             'table' => $table,
             'traits' => implode("\n    ", $traits),
+            'relations_methods' => $this->relationMethods($name),
         ]);
         file_put_contents(app_path("Models/{$name}.php"), $content);
         $this->line("Created model: app/Models/{$name}.php");
     }
 
-    protected function generateController(string $name): void
+    protected function generateController(string $name, array $searchable = []): void
     {
         $content = $this->render('controller.stub', [
             'name' => $name
@@ -141,9 +229,11 @@ class MakeCrudCommand extends Command
     protected function generateRequest(string $name, array $fields): void
     {
         $rules = $this->validationRules($fields);
+        $relationRules = $this->relationRules();
         $content = $this->render('request.stub', [
             'name' => $name,
             'rules' => $rules,
+            'relation_rules' => $relationRules ? ",\n            ".$relationRules : ""
         ]);
         @mkdir(app_path('Http/Requests'), 0777, true);
         file_put_contents(app_path("Http/Requests/{$name}Request.php"), $content);
@@ -160,7 +250,10 @@ class MakeCrudCommand extends Command
 
     protected function generateResource(string $name): void
     {
-        $content = $this->render('resource.stub', ['name' => $name]);
+        $content = $this->render('resource.stub', [
+            'name' => $name,
+            'relation_includes' => $this->relationIncludes()
+        ]);
         @mkdir(app_path('Http/Resources'), 0777, true);
         file_put_contents(app_path("Http/Resources/{$name}Resource.php"), $content);
         $this->line("Created resource: app/Http/Resources/{$name}Resource.php");
@@ -176,7 +269,7 @@ class MakeCrudCommand extends Command
 
     protected function generateSeeder(string $name, string $table): void
     {
-        $content = $this->render('seeder.stub', ['name'=> $name, 'table'=> $table]);
+        $content = $this->render('seeder.stub', ['name' => $name, 'table' => $table]);
         @mkdir(database_path('seeders'), 0777, true);
         file_put_contents(database_path("seeders/{$name}Seeder.php"), $content);
         $this->line("Created seeder: database/seeders/{$name}Seeder.php");
@@ -184,16 +277,17 @@ class MakeCrudCommand extends Command
 
     protected function generateViews(string $name, string $table): void
     {
-        $base = resource_path('views/'+Str::kebab(Str::pluralStudly($name)));
+        $dir = Str::kebab(Str::pluralStudly($name));
+        $base = resource_path('views/'.$dir);
         @mkdir($base, 0777, true);
         foreach (['index','create','edit','show'] as $v) {
-            $content = $this->render("views/{$v}.blade.php.stub", ['name'=> $name, 'table'=> $table]);
-            file_put_contents($base.'/'.$v+'.blade.php', $content);
+            $content = $this->render("views/{$v}.blade.php.stub", ['name' => $name, 'table' => $table]);
+            file_put_contents($base.'/'.$v.'.blade.php', $content);
         }
-        $this->line("Created views: resources/views/".Str::kebab(Str::pluralStudly($name)));
+        $this->line("Created views: resources/views/".$dir);
     }
 
-    protected function appendRoutes(string $name, string $table): void
+    protected function appendRoutes(string $name): void
     {
         $file = base_path($this->option('api') ? 'routes/api.php' : 'routes/web.php');
         $route = "Route::crud('".Str::kebab(Str::pluralStudly($name))."', App\\Http\\Controllers\\{$name}Controller::class);";

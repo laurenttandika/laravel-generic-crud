@@ -13,23 +13,42 @@ abstract class CrudController extends Controller
     /** @return class-string<Model> */
     abstract public static function model(): string;
 
-    /** Optional: override to add tenant/user scoping */
+    /**
+     * Override in child for nested resources
+     * Example return:
+     *  return [
+     *      'param' => 'post',                   // route parameter name
+     *      'fk'    => 'post_id',                // foreign key on child table
+     *      'model' => \App\Models\Post::class,  // (optional) parent model class
+     *  ];
+     */
+    protected function parentConfig(): array { return []; }
+
     protected function baseQuery()
     {
         $model = static::model();
-        return $model::query();
+        $q = $model::query();
+
+        // If nested, scope by parent FK from route param
+        $cfg = $this->parentConfig();
+        if (!empty($cfg['fk']) && !empty($cfg['param'])) {
+            $parentId = request()->route($cfg['param']);
+            if ($parentId instanceof \Illuminate\Database\Eloquent\Model) {
+                $parentId = $parentId->getKey();
+            }
+            if ($parentId !== null) {
+                $q->where($q->getModel()->getTable().'.'.$cfg['fk'], $parentId);
+            }
+        }
+        return $q;
     }
 
-    /** Override to configure searchable columns */
     protected function searchable(): array { return []; }
 
-    /** Override to map request sort to db columns whitelist */
     protected function sortable(): array { return []; }
 
-    /** FormRequest class FQCN */
     abstract protected function requestClass(): string;
 
-    /** Resource FQCN */
     abstract protected function resource(): string;
 
     protected function resourceCollection(): string { return $this->resource(); }
@@ -38,7 +57,6 @@ abstract class CrudController extends Controller
     {
         $q = $this->baseQuery();
 
-        // Search
         if ($search = $request->query('q')) {
             $q->where(function ($sub) use ($search) {
                 foreach ($this->searchable() as $col) {
@@ -47,21 +65,13 @@ abstract class CrudController extends Controller
             });
         }
 
-        // Filter DSL
         $q = (new QueryFilters($q, $this->filterable()))->apply($request->query('filter', []));
 
-        // Sort
         if ($sort = $request->query('sort')) {
-            // allow -column for desc
             $direction = 'asc';
-            if (str_starts_with($sort, '-')) {
-                $direction = 'desc';
-                $sort = ltrim($sort, '-');
-            }
+            if (str_starts_with($sort, '-')) { $direction = 'desc'; $sort = ltrim($sort, '-'); }
             $allowed = $this->sortable();
-            if (in_array($sort, $allowed)) {
-                $q->orderBy($sort, $direction);
-            }
+            if (in_array($sort, $allowed)) $q->orderBy($sort, $direction);
         }
 
         return $this->resourceCollection()::collection(
@@ -69,12 +79,20 @@ abstract class CrudController extends Controller
         );
     }
 
-    /** Override to declare filterable columns and custom ops */
     protected function filterable(): array { return []; }
 
     public function store(Request $request)
     {
         $data = $this->validated($request, 'store');
+
+        // If nested, auto-fill FK from route
+        $cfg = $this->parentConfig();
+        if (!empty($cfg['fk']) && !empty($cfg['param']) && !isset($data[$cfg['fk']])) {
+            $parentId = $request->route($cfg['param']);
+            if ($parentId instanceof \Illuminate\Database\Eloquent\Model) $parentId = $parentId->getKey();
+            $data[$cfg['fk']] = $parentId;
+        }
+
         $m = static::model()::create($data);
         $this->afterSaved($m, 'store', $data);
         return new ($this->resource())($m);
@@ -102,43 +120,32 @@ abstract class CrudController extends Controller
         return response()->noContent();
     }
 
-    /** Bulk actions: delete, restore, forceDelete, update:{key:value} */
     public function bulk(Request $request)
     {
-        $action = $request->string('action')->toString();
+        $action = (string)$request->input('action');
         $ids = $request->input('ids', []);
         $q = $this->baseQuery()->whereIn('id', $ids);
 
         $count = 0;
         switch ($action) {
-            case 'delete':
-                $count = $q->delete();
-                break;
-            case 'forceDelete':
-                $count = $q->forceDelete();
-                break;
-            case 'restore':
-                $count = $q->restore();
-                break;
+            case 'delete': $count = $q->delete(); break;
+            case 'forceDelete': $count = $q->forceDelete(); break;
+            case 'restore': $count = $q->restore(); break;
             default:
                 if (str_starts_with($action, 'update:')) {
-                    $json = substr($action, 7);
-                    $payload = json_decode($json, true) ?: [];
+                    $payload = json_decode(substr($action, 7), true) ?: [];
                     $count = $q->update($payload);
                 }
         }
         return response()->json(['ok' => true, 'affected' => $count]);
     }
 
-    /** CSV export */
     public function export(Request $request): StreamedResponse
     {
         $q = $this->baseQuery();
         if ($search = $request->query('q')) {
             $q->where(function ($sub) use ($search) {
-                foreach ($this->searchable() as $col) {
-                    $sub->orWhere($col, 'like', "%{$search}%");
-                }
+                foreach ($this->searchable() as $col) $sub->orWhere($col, 'like', "%{$search}%");
             });
         }
         $q = (new QueryFilters($q, $this->filterable()))->apply($request->query('filter', []));
@@ -149,13 +156,10 @@ abstract class CrudController extends Controller
         $callback = function () use ($q, $columns, $config) {
             $out = fopen('php://output', 'w');
             fputcsv($out, $columns, $config['delimiter'], $config['enclosure'], $config['escape']);
-
             $q->orderBy('id')->chunk($config['chunk'], function ($rows) use ($out, $columns, $config) {
                 foreach ($rows as $row) {
                     $data = [];
-                    foreach ($columns as $col) {
-                        $data[] = data_get($row, $col);
-                    }
+                    foreach ($columns as $col) $data[] = data_get($row, $col);
                     fputcsv($out, $data, $config['delimiter'], $config['enclosure'], $config['escape']);
                 }
             });
@@ -167,10 +171,8 @@ abstract class CrudController extends Controller
         ]);
     }
 
-    /** Override to choose which columns export */
     protected function exportableColumns(): array { return ['id','created_at','updated_at']; }
 
-    /** Hook after create/update */
     protected function afterSaved(Model $model, string $action, array $data): void {}
 
     protected function validated(Request $request, string $action, ?Model $model = null): array

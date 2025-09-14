@@ -1,0 +1,17 @@
+<?php
+
+namespace App\Policies;
+
+use App\Models\User;
+use App\Models\{{name}};
+
+class {{name}}Policy
+{
+    public function viewAny(User $user): bool { return true; }
+    public function view(User $user, {{name}} $model): bool { return true; }
+    public function create(User $user): bool { return true; }
+    public function update(User $user, {{name}} $model): bool { return true; }
+    public function delete(User $user, {{name}} $model): bool { return true; }
+    public function restore(User $user, {{name}} $model): bool { return true; }
+    public function forceDelete(User $user, {{name}} $model): bool { return false; }
+}

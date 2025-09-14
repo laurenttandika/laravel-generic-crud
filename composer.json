@@ -1,0 +1,44 @@
+{
+  "name": "qnox/laravel-generic-crud",
+  "description": "Schema-driven CRUD scaffolder for Laravel with bulk actions, CSV export, filter DSL, audit hooks, and multi-tenant support.",
+  "keywords": [
+    "laravel",
+    "crud",
+    "scaffold",
+    "generator",
+    "tenant",
+    "policy",
+    "filters",
+    "export",
+    "csv"
+  ],
+  "license": "MIT",
+  "type": "library",
+  "autoload": {
+    "psr-4": {
+      "Qnox\\Crud\\": "src/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Qnox\\Crud\\CrudServiceProvider"
+      ]
+    }
+  },
+  "require": {
+    "php": ">=8.1",
+    "illuminate/support": "^10.0|^11.0"
+  },
+  "homepage": "https://github.com/laurenttandika/laravel-generic-crud",
+  "support": {
+    "issues": "https://github.com/laurenttandika/laravel-generic-crud/issues",
+    "source": "https://github.com/laurenttandika/laravel-generic-crud"
+  },
+  "authors": [
+    {
+      "name": "Qnox Limited",
+      "email": "info@qnox.co.tz"
+    }
+  ]
+}

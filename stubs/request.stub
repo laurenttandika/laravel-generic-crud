@@ -1,0 +1,18 @@
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class {{name}}Request extends FormRequest
+{
+    public function authorize(): bool { return true; }
+
+    public function rules(): array
+    {
+        // You can branch on $this->input('__action') === 'store'|'update' for unique rules etc.
+        return [
+            {{rules}}
+        ];
+    }
+}

@@ -1,0 +1,14 @@
+<?php
+
+namespace Tests\Feature;
+
+use Tests\TestCase;
+use App\Models\User;
+
+class {{name}}CrudTest extends TestCase
+{
+    public function test_index_requires_auth(): void
+    {
+        $this->getJson('/api/{{table}}')->assertStatus(401);
+    }
+}

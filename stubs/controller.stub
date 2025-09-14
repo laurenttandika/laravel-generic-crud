@@ -1,0 +1,19 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Qnox\Crud\Http\Controllers\CrudController;
+use App\Http\Requests\{{name}}Request;
+use App\Http\Resources\{{name}}Resource;
+use App\Models\{{name}};
+
+class {{name}}Controller extends CrudController
+{
+    public static function model(): string { return {{name}}::class; }
+    protected function resource(): string { return {{name}}Resource::class; }
+    protected function requestClass(): string { return {{name}}Request::class; }
+
+    protected function searchable(): array { return ['id']; } // customize
+    protected function sortable(): array { return ['id','created_at']; }
+    protected function filterable(): array { return ['id','created_at']; }
+}

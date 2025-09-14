@@ -112,7 +112,7 @@ class MakeCrudCommand extends Command
             }
         }
 
-        if ($this->option('softdeletes')) $lines.append("\$table->softDeletes();");
+        if ($this->option('softdeletes')) $lines[] = "\$table->softDeletes();";
         return implode("\n            ", $lines);
     }
 

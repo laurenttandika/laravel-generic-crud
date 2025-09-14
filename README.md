@@ -12,8 +12,7 @@ Schema-driven CRUD scaffolder and runtime helpers for Laravel. Includes:
 
 ## Install (local dev)
 ```bash
-composer config repositories.qnox-crud path ./packages/qnox/laravel-generic-crud
-composer require qnox/laravel-generic-crud:dev-main
+composer require qnox/laravel-generic-crud:^0.1
 php artisan vendor:publish --tag=crud-config
 php artisan vendor:publish --tag=crud-stubs
 ```

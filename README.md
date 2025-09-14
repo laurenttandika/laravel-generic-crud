@@ -10,7 +10,7 @@ Schema-driven CRUD scaffolder and runtime helpers for Laravel. Includes:
 - Audit trail hooks (`created_by`, `updated_by`) + changes log
 - Optional JSON schema input to define fields once
 
-## Install (local path dev)
+## Install
 ```bash
 composer require qnox/laravel-generic-crud:^0.1
 
